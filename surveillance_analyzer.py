@@ -169,9 +169,8 @@ class SurveillanceAnalyzer:
         
         if gps_data:
             # Load devices from all databases, associating them with GPS locations
-            primary_location = "Location_1"  # Use the first/primary location
             for db_file in db_files_to_process:
-                db_count = self._load_appearances_with_gps(db_file, primary_location)
+                db_count = self._load_appearances_with_gps(db_file)
                 print(f"   📁 {os.path.basename(db_file)}: {db_count} device appearances")
                 total_count += db_count
         else:
@@ -251,7 +250,7 @@ class SurveillanceAnalyzer:
         print(f"📊 Analysis Results:")
         print(f"   Total Devices: {results['total_devices']:,}")
         print(f"   Suspicious Devices: {results['suspicious_devices']}")
-        print(f"   High Threat: {results['high_threat_devices']}")
+        print(f"   High Persistence: {results['high_persistence_devices']}")
         print(f"   Multi-Location Devices: {results['multi_location_devices']}")
         print(f"   Location Sessions: {results['location_sessions']}")
         print(f"\\n📁 Generated Files:")
@@ -327,7 +326,8 @@ class SurveillanceAnalyzer:
         
         print(f"📊 Results exported to JSON: {output_file}")
     
-    def _load_appearances_with_gps(self, db_path: str, location_id: str) -> int:
+    def _load_appearances_with_gps(self, db_path: str,
+                                   fallback_location_id: str = "unknown_location") -> int:
         """Load device appearances and register them with GPS tracker"""
         import sqlite3
         import json
@@ -336,9 +336,11 @@ class SurveillanceAnalyzer:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
                 
-                # Get all devices with timestamps
+                # Kismet's devices table is one deduped row per MAC, so this is one
+                # coarse appearance per capture DB. True single-capture persistence
+                # needs the deferred packets-table model described in the docs.
                 cursor.execute("""
-                    SELECT devmac, last_time, type, device 
+                    SELECT devmac, last_time, type, device, avg_lat, avg_lon
                     FROM devices 
                     WHERE last_time > 0
                     ORDER BY last_time DESC
@@ -346,17 +348,24 @@ class SurveillanceAnalyzer:
                 
                 rows = cursor.fetchall()
                 count = 0
-                
-                # Set current location in GPS tracker for device correlation
-                if hasattr(self.gps_tracker, 'location_sessions') and self.gps_tracker.location_sessions:
-                    # Find the location session that matches our location_id
-                    for session in self.gps_tracker.location_sessions:
-                        if session.session_id == location_id:
-                            self.gps_tracker.current_location = session
-                            break
-                
+
                 for row in rows:
-                    mac, timestamp, device_type, device_json = row
+                    mac, timestamp, device_type, device_json, avg_lat, avg_lon = row
+                    device_location_id = fallback_location_id
+                    try:
+                        device_lat = float(avg_lat)
+                        device_lon = float(avg_lon)
+                    except (TypeError, ValueError):
+                        device_lat = 0.0
+                        device_lon = 0.0
+
+                    if device_lat != 0.0 or device_lon != 0.0:
+                        nearest_location_id = self.gps_tracker.find_nearest_location_id(
+                            device_lat,
+                            device_lon
+                        )
+                        if nearest_location_id:
+                            device_location_id = nearest_location_id
                     
                     # Extract SSIDs from device JSON
                     ssids_probed = []
@@ -375,14 +384,12 @@ class SurveillanceAnalyzer:
                     self.detector.add_device_appearance(
                         mac=mac,
                         timestamp=timestamp,
-                        location_id=location_id,
+                        location_id=device_location_id,
                         ssids_probed=ssids_probed,
                         device_type=device_type
                     )
                     
-                    # Also add to GPS tracker if current location is set
-                    if self.gps_tracker.current_location:
-                        self.gps_tracker.add_device_at_current_location(mac)
+                    self.gps_tracker.add_device_at_location(mac, device_location_id)
                     
                     count += 1
                 
@@ -406,8 +413,9 @@ def main():
                        help='Focus analysis on stalking detection')
     parser.add_argument('--output-json', type=str,
                        help='Export results to JSON file')
-    parser.add_argument('--min-threat', type=float, default=0.5,
-                       help='Minimum threat score for reporting (default: 0.5)')
+    parser.add_argument('--min-persistence', '--min-threat', dest='min_persistence',
+                       type=float, default=0.5,
+                       help='Minimum persistence score for reporting (default: 0.5)')
     
     args = parser.parse_args()
     
@@ -430,7 +438,7 @@ def main():
         
         # Stalking-specific analysis
         if args.stalking_only:
-            stalking_devices = analyzer.analyze_for_stalking(args.min_threat)
+            stalking_devices = analyzer.analyze_for_stalking(args.min_persistence)
             if stalking_devices:
                 print(f"\\n🚨 STALKING ALERT: {len(stalking_devices)} devices with stalking patterns!")
                 for device in stalking_devices:

@@ -112,18 +112,17 @@ class ProbeAnalyzer:
             'Authorization': f'Basic {self.wigle_api_key}'
         }
         
-        # Only include bounding box if local_only is True and coordinates are set
+        # Include the configured local bounding box on WiGLE queries when available.
         params = {'ssid': ssid}
-        if self.local_only:
-            search_config = config.get('search', {})
-            if all(search_config.get(k) is not None for k in ['lat_min', 'lat_max', 'lon_min', 'lon_max']):
-                params.update({
-                    'latrange1': search_config['lat_min'],
-                    'latrange2': search_config['lat_max'],
-                    'longrange1': search_config['lon_min'],
-                    'longrange2': search_config['lon_max'],
-                })
-                print("Using local search area")
+        search_config = config.get('search', {})
+        if all(search_config.get(k) is not None for k in ['lat_min', 'lat_max', 'lon_min', 'lon_max']):
+            params.update({
+                'latrange1': search_config['lat_min'],
+                'latrange2': search_config['lat_max'],
+                'longrange1': search_config['lon_min'],
+                'longrange2': search_config['lon_max'],
+            })
+            print("Using local search area")
         
         try:
             response = requests.get(
@@ -251,4 +250,4 @@ def main():
                         print(f"  Last seen: {loc.get('lastupdt')}")
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -153,7 +153,46 @@ class GPSTracker:
             logger.debug(f"Device {mac} seen at {self.current_location.session_id}")
         
         return self.current_location.session_id
-    
+
+    def find_nearest_location_id(self, latitude: float, longitude: float,
+                                 max_distance: float = None) -> Optional[str]:
+        """Return nearest location session ID if it is within max_distance meters."""
+        if max_distance is None:
+            max_distance = self.location_threshold
+
+        if latitude is None or longitude is None:
+            return None
+
+        try:
+            latitude = float(latitude)
+            longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        candidate = GPSLocation(latitude=latitude, longitude=longitude)
+        closest_session = None
+        closest_distance = None
+
+        for session in self.location_sessions:
+            distance = self._calculate_distance(candidate, session.location)
+            if closest_distance is None or distance < closest_distance:
+                closest_distance = distance
+                closest_session = session
+
+        if closest_session and closest_distance <= max_distance:
+            return closest_session.session_id
+
+        return None
+
+    def add_device_at_location(self, mac: str, session_id: str) -> None:
+        """Record that a device was seen at a specific location session."""
+        for session in self.location_sessions:
+            if session.session_id == session_id:
+                if mac not in session.devices_seen:
+                    session.devices_seen.append(mac)
+                    logger.debug(f"Device {mac} seen at {session.session_id}")
+                return
+
     def get_current_location_id(self) -> Optional[str]:
         """Get current location ID"""
         if self.current_location:
