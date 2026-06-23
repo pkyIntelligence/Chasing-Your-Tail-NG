@@ -33,6 +33,10 @@ the `paths.kismet_logs` glob in `config.json` and the auto-start crontab in `CLA
 Monitor mode is a **kernel-driver** capability, not an app feature — Kismet can only use what
 the OS exposes. Native Linux on bare metal (a Pi) is where the driver ecosystem actually works.
 
+> **Phones?** An **Android** device (rooted + OTG monitor-mode adapter) can act as a
+> pocketable capture drone feeding this same Kismet server; **iOS cannot capture** (no
+> monitor mode) but makes a fine viewer. See `MOBILE.md`.
+
 ---
 
 ## 2. Recommended capture board — Raspberry Pi
