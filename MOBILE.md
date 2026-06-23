@@ -5,8 +5,10 @@ feeding Kismet) and **analysis/viewing** (CYT reading the `*.kismet` SQLite DB).
 covers running those roles on phones.
 
 > **TL;DR**
-> - **Android can capture** — as a Kismet *remote-capture drone* feeding your existing
->   Kismet server. Requires root + an external monitor-mode USB adapter (OTG). **Path A.**
+> - **Android can capture** — as a Kismet *remote-capture drone* (root + external
+>   monitor-mode USB adapter via OTG). Best for **mobile / on-demand** capture. **Path A.**
+> - **Always-on / stationary capture → dedicated Raspberry Pi** (`HARDWARE.md`). A phone
+>   can't sustain it — battery, heat, and OTG charging limits (§2, §2.5).
 > - **iOS can only view** — monitor mode is architecturally absent from iOS (true even
 >   jailbroken). iOS is a first-class *companion app* (viewer), never a sensor.
 > - Either way, the **server and all CYT analysis code stay unchanged** — the contract is
@@ -34,8 +36,17 @@ So: **capture is Android-only; viewing is any platform.**
 
 ## 2. Path A — Android as a remote-capture drone
 
-The phone becomes a pocketable sensor. Kismet still runs on your Pi/laptop and still writes
-the same `.kismet` files CYT already consumes — **zero backend changes**.
+> **Scope: mobile / on-demand capture only.** For **always-on / stationary** capture (CYT's
+> core use case), use a **dedicated Raspberry Pi** — see `HARDWARE.md`. A phone can't be a
+> set-and-forget sensor: powering the USB adapter over OTG drains the battery in hours, the
+> port can't charge and run the adapter at once (§2.5), and sustained capture runs the phone
+> hot. Path A's real strength is the job a stationary Pi *can't* do — **walking a sweep,
+> checking a new location, or testing whether a device follows you between places.** Treat it
+> as a complement to the Pi, not a replacement.
+
+The phone becomes a pocketable sensor. Kismet still runs on your server (Pi, laptop, WSL2, or
+the phone itself) and still writes the same `.kismet` files CYT already consumes — **zero
+backend changes**.
 
 ```
 [Android + OTG monitor-mode adapter]          ← capture (this section)
@@ -116,8 +127,16 @@ dir. If you analyze elsewhere (e.g. WSL2), copy the files as in `HARDWARE.md` §
   persistence-by-stable-MAC detection — independent of *where* you capture. See `HARDWARE.md` §6.
 - **2.4 GHz-only adapters** miss 5/6 GHz probes. Use a dual-band monitor-mode adapter if you
   need both (heavier driver setup).
-- **Battery + heat** — continuous monitor-mode capture drains a phone fast. Plan power for
-  long sessions.
+- **Battery + heat** — continuous monitor-mode capture drains a phone fast (the OTG-powered
+  adapter alone pulls ~300–450 mA; expect roughly **4–8 hours**, less under heavy traffic or
+  if the full stack runs on-device). Sustained capture also runs the phone hot, risking
+  thermal throttling (dropped frames) and long-term battery wear.
+- **Can't charge on one port** — OTG uses the phone's only USB-C port to *power and talk to*
+  the adapter, so it usually **can't charge simultaneously**. A power bank alone won't help.
+  Fix: a **powered OTG hub** or **PD-passthrough Y-cable** that feeds the adapter *and*
+  accepts charging input — required for any session beyond a couple hours. (For truly
+  unattended 24/7 capture, this is the point where a dedicated Pi simply wins — see §2 and
+  `HARDWARE.md`.)
 
 ---
 
