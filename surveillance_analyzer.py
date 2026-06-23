@@ -14,6 +14,7 @@ from pathlib import Path
 
 from surveillance_detector import SurveillanceDetector, load_appearances_from_kismet
 from gps_tracker import GPSTracker, KMLExporter, simulate_gps_data
+from kismet_utils import get_last_probed_ssids
 from secure_credentials import secure_config_loader
 
 # Configure logging
@@ -169,9 +170,8 @@ class SurveillanceAnalyzer:
         
         if gps_data:
             # Load devices from all databases, associating them with GPS locations
-            primary_location = "Location_1"  # Use the first/primary location
             for db_file in db_files_to_process:
-                db_count = self._load_appearances_with_gps(db_file, primary_location)
+                db_count = self._load_appearances_with_gps(db_file)
                 print(f"   📁 {os.path.basename(db_file)}: {db_count} device appearances")
                 total_count += db_count
         else:
@@ -251,7 +251,7 @@ class SurveillanceAnalyzer:
         print(f"📊 Analysis Results:")
         print(f"   Total Devices: {results['total_devices']:,}")
         print(f"   Suspicious Devices: {results['suspicious_devices']}")
-        print(f"   High Threat: {results['high_threat_devices']}")
+        print(f"   High Persistence: {results['high_persistence_devices']}")
         print(f"   Multi-Location Devices: {results['multi_location_devices']}")
         print(f"   Location Sessions: {results['location_sessions']}")
         print(f"\\n📁 Generated Files:")
@@ -327,18 +327,20 @@ class SurveillanceAnalyzer:
         
         print(f"📊 Results exported to JSON: {output_file}")
     
-    def _load_appearances_with_gps(self, db_path: str, location_id: str) -> int:
+    def _load_appearances_with_gps(self, db_path: str,
+                                   fallback_location_id: str = "unknown_location") -> int:
         """Load device appearances and register them with GPS tracker"""
         import sqlite3
-        import json
         
         try:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
                 
-                # Get all devices with timestamps
+                # Kismet's devices table is one deduped row per MAC, so this is one
+                # coarse appearance per capture DB. True single-capture persistence
+                # needs the deferred packets-table model described in the docs.
                 cursor.execute("""
-                    SELECT devmac, last_time, type, device 
+                    SELECT devmac, last_time, type, device, avg_lat, avg_lon
                     FROM devices 
                     WHERE last_time > 0
                     ORDER BY last_time DESC
@@ -346,43 +348,70 @@ class SurveillanceAnalyzer:
                 
                 rows = cursor.fetchall()
                 count = 0
-                
-                # Set current location in GPS tracker for device correlation
-                if hasattr(self.gps_tracker, 'location_sessions') and self.gps_tracker.location_sessions:
-                    # Find the location session that matches our location_id
-                    for session in self.gps_tracker.location_sessions:
-                        if session.session_id == location_id:
-                            self.gps_tracker.current_location = session
-                            break
-                
+
                 for row in rows:
-                    mac, timestamp, device_type, device_json = row
-                    
-                    # Extract SSIDs from device JSON
-                    ssids_probed = []
+                    mac, timestamp, device_type, device_json, avg_lat, avg_lon = row
+                    device_location_id = fallback_location_id
+                    device_lat = None
+                    device_lon = None
+
                     try:
-                        device_data = json.loads(device_json)
-                        dot11_device = device_data.get('dot11.device', {})
-                        if dot11_device:
-                            probe_record = dot11_device.get('dot11.device.last_probed_ssid_record', {})
-                            ssid = probe_record.get('dot11.probedssid.ssid')
-                            if ssid:
-                                ssids_probed = [ssid]
-                    except (json.JSONDecodeError, KeyError):
-                        pass
+                        if avg_lat is not None and avg_lon is not None:
+                            device_lat = float(avg_lat)
+                            device_lon = float(avg_lon)
+                    except (TypeError, ValueError) as exc:
+                        logger.debug(
+                            "Invalid GPS coordinates for device %s in %s: "
+                            "avg_lat=%r avg_lon=%r: %s",
+                            mac,
+                            db_path,
+                            avg_lat,
+                            avg_lon,
+                            exc
+                        )
+
+                    if device_lat is not None and device_lon is not None:
+                        # Kismet uses 0,0 as the no-fix sentinel for device GPS.
+                        # Treat it as report-only rather than a real Gulf of Guinea point.
+                        has_device_gps = device_lat != 0.0 or device_lon != 0.0
+                    else:
+                        has_device_gps = False
+
+                    if has_device_gps:
+                        nearest_location_id = self.gps_tracker.find_nearest_location_id(
+                            device_lat,
+                            device_lon
+                        )
+                        if nearest_location_id:
+                            device_location_id = nearest_location_id
+                    else:
+                        logger.debug(
+                            "Device %s has no usable GPS coordinates in %s; using %s",
+                            mac,
+                            db_path,
+                            fallback_location_id
+                        )
+                    
+                    ssids_probed = get_last_probed_ssids(device_json)
                     
                     # Add to surveillance detector
                     self.detector.add_device_appearance(
                         mac=mac,
                         timestamp=timestamp,
-                        location_id=location_id,
+                        location_id=device_location_id,
                         ssids_probed=ssids_probed,
                         device_type=device_type
                     )
                     
-                    # Also add to GPS tracker if current location is set
-                    if self.gps_tracker.current_location:
-                        self.gps_tracker.add_device_at_current_location(mac)
+                    if device_location_id == fallback_location_id:
+                        logger.debug(
+                            "Device %s appearance recorded with fallback location %s; "
+                            "skipping GPS session correlation",
+                            mac,
+                            fallback_location_id
+                        )
+                    else:
+                        self.gps_tracker.add_device_at_location(mac, device_location_id)
                     
                     count += 1
                 
@@ -406,8 +435,9 @@ def main():
                        help='Focus analysis on stalking detection')
     parser.add_argument('--output-json', type=str,
                        help='Export results to JSON file')
-    parser.add_argument('--min-threat', type=float, default=0.5,
-                       help='Minimum threat score for reporting (default: 0.5)')
+    parser.add_argument('--min-persistence', '--min-threat', dest='min_persistence',
+                       type=float, default=0.5,
+                       help='Minimum persistence score for reporting (default: 0.5)')
     
     args = parser.parse_args()
     
@@ -430,7 +460,7 @@ def main():
         
         # Stalking-specific analysis
         if args.stalking_only:
-            stalking_devices = analyzer.analyze_for_stalking(args.min_threat)
+            stalking_devices = analyzer.analyze_for_stalking(args.min_persistence)
             if stalking_devices:
                 print(f"\\n🚨 STALKING ALERT: {len(stalking_devices)} devices with stalking patterns!")
                 for device in stalking_devices:

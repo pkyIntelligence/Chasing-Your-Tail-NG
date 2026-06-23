@@ -103,7 +103,7 @@ for pid in $(pgrep kismet); do sudo kill -9 $pid; done
 # NEW: Automatic GPS extraction from Kismet with spectacular KML visualization
 python3 surveillance_analyzer.py
 
-# Run analysis with demo GPS data (for testing - uses Phoenix coordinates)
+# Run analysis with demo GPS data and configured Kismet DBs
 python3 surveillance_analyzer.py --demo
 
 # Analyze specific Kismet database for surveillance patterns
@@ -190,9 +190,9 @@ System reads from live Kismet SQLite databases using direct SQL queries. Key tab
 - Probe request data is embedded in JSON `device` field under `dot11.device.last_probed_ssid_record`
 
 ### Ignore List Format
-- **MAC lists**: Python list variable `ignore_list = ['MAC1', 'MAC2', ...]`
-- **SSID lists**: Python list variable `non_alert_ssid_list = ['SSID1', 'SSID2', ...]`
-- Lists are loaded via `exec()` at runtime
+- **MAC lists**: JSON arrays in `ignore_lists/mac_list.json`
+- **SSID lists**: JSON arrays in `ignore_lists/ssid_list.json`
+- Lists are loaded by `secure_ignore_loader.py` without executing file contents
 
 ### WiGLE Integration
 Probe analyzer can query WiGLE API for SSID location data using securely encrypted API credentials.
@@ -210,6 +210,7 @@ Advanced persistence detection algorithms analyze device behavior patterns:
 - **Location Clustering**: Groups nearby GPS coordinates (configurable threshold)
 - **Session Management**: Tracks location sessions with timeout handling
 - **Device Correlation**: Links device appearances to specific GPS locations
+- **Current limitation**: the `devices` table provides one averaged GPS point per MAC per Kismet database. Multi-location following can now fire across multiple capture sessions, but true persistence within one capture requires packet-level sightings from Kismet's `packets` table.
 - **Professional KML Generation**: Creates spectacular Google Earth files with:
   - Color-coded location markers with persistence-level styling
   - Device tracking paths with threat-level visualization

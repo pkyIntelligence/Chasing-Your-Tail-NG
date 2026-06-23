@@ -99,7 +99,7 @@ python3 probe_analyzer.py --wigle
 # 🆕 NEW: Automatic GPS extraction with spectacular KML visualization
 python3 surveillance_analyzer.py
 
-# Run analysis with demo GPS data (for testing - uses Phoenix coordinates)
+# Run analysis with demo GPS data and your configured Kismet DBs
 python3 surveillance_analyzer.py --demo
 
 # Analyze specific Kismet database
@@ -182,6 +182,7 @@ Advanced persistence detection algorithms analyze device behavior patterns:
 - **Location clustering** with 100m threshold for grouping nearby coordinates
 - **Session management** with timeout handling for location transitions
 - **Device-to-location correlation** links Wi-Fi devices to GPS positions
+- **Current limitation**: the `devices` table provides one averaged GPS point per MAC per Kismet database. Multi-location following can now fire across multiple capture sessions, but true persistence within one capture requires packet-level sightings from Kismet's `packets` table.
 - **Professional KML generation** with spectacular Google Earth visualizations featuring:
   - Color-coded persistence level markers (green/yellow/red)
   - Device tracking paths showing movement correlation
@@ -208,6 +209,8 @@ All settings are centralized in `config.json`:
 ```
 
 WiGLE API credentials are now securely encrypted in `secure_credentials/encrypted_credentials.json`.
+
+`surveillance_analyzer.py --demo` uses simulated GPS route points plus real Kismet data from the configured `paths.kismet_logs` pattern, so it still requires at least one readable Kismet database.
 
 ## Security Features
 
