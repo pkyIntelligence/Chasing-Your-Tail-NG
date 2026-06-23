@@ -14,6 +14,7 @@ from pathlib import Path
 
 from surveillance_detector import SurveillanceDetector, load_appearances_from_kismet
 from gps_tracker import GPSTracker, KMLExporter, simulate_gps_data
+from kismet_utils import get_last_probed_ssids
 from secure_credentials import secure_config_loader
 
 # Configure logging
@@ -330,7 +331,6 @@ class SurveillanceAnalyzer:
                                    fallback_location_id: str = "unknown_location") -> int:
         """Load device appearances and register them with GPS tracker"""
         import sqlite3
-        import json
         
         try:
             with sqlite3.connect(db_path) as conn:
@@ -367,18 +367,7 @@ class SurveillanceAnalyzer:
                         if nearest_location_id:
                             device_location_id = nearest_location_id
                     
-                    # Extract SSIDs from device JSON
-                    ssids_probed = []
-                    try:
-                        device_data = json.loads(device_json)
-                        dot11_device = device_data.get('dot11.device', {})
-                        if dot11_device:
-                            probe_record = dot11_device.get('dot11.device.last_probed_ssid_record', {})
-                            ssid = probe_record.get('dot11.probedssid.ssid')
-                            if ssid:
-                                ssids_probed = [ssid]
-                    except (json.JSONDecodeError, KeyError):
-                        pass
+                    ssids_probed = get_last_probed_ssids(device_json)
                     
                     # Add to surveillance detector
                     self.detector.add_device_appearance(

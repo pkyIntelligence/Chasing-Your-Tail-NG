@@ -2,7 +2,6 @@
 Surveillance Detection System for CYT
 Detects devices that may be following or tracking the user
 """
-import json
 import sqlite3
 import logging
 from datetime import datetime, timedelta
@@ -10,6 +9,7 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from collections import defaultdict
 import pathlib
+from kismet_utils import get_last_probed_ssids
 
 logger = logging.getLogger(__name__)
 
@@ -842,18 +842,7 @@ def load_appearances_from_kismet(db_path: str, detector: SurveillanceDetector,
             for row in rows:
                 mac, timestamp, device_type, device_json = row
                 
-                # Extract SSIDs from device JSON
-                ssids_probed = []
-                try:
-                    device_data = json.loads(device_json)
-                    dot11_device = device_data.get('dot11.device', {})
-                    if dot11_device:
-                        probe_record = dot11_device.get('dot11.device.last_probed_ssid_record', {})
-                        ssid = probe_record.get('dot11.probedssid.ssid')
-                        if ssid:
-                            ssids_probed = [ssid]
-                except (json.JSONDecodeError, KeyError):
-                    pass
+                ssids_probed = get_last_probed_ssids(device_json)
                 
                 detector.add_device_appearance(
                     mac=mac,

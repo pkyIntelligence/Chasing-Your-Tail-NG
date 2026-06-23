@@ -3,6 +3,7 @@ Secure main logic for Chasing Your Tail - replaces vulnerable SQL operations
 """
 import logging
 from typing import List, Dict, Set
+from kismet_utils import get_last_probed_ssid
 from secure_database import SecureKismetDB, SecureTimeWindows
 
 logger = logging.getLogger(__name__)
@@ -144,29 +145,17 @@ class SecureCYTMonitor:
         if not device_data:
             return
         
-        try:
-            dot11_device = device_data.get('dot11.device', {})
-            if not isinstance(dot11_device, dict):
-                return
-            
-            probe_record = dot11_device.get('dot11.device.last_probed_ssid_record', {})
-            if not isinstance(probe_record, dict):
-                return
-            
-            ssid = probe_record.get('dot11.probedssid.ssid', '')
-            if not ssid or ssid in self.ssid_ignore_list:
-                return
-            
-            # Log the probe
-            message = f'Found a probe!: {ssid}'
-            self.log_file.write(f'{message}\n')
-            logger.info(f"Probe detected from {mac}: {ssid}")
-            
-            # Check against historical lists
-            self._check_ssid_history(ssid)
-            
-        except (KeyError, TypeError, AttributeError) as e:
-            logger.debug(f"No probe data for device {mac}: {e}")
+        ssid = get_last_probed_ssid(device_data)
+        if not ssid or ssid in self.ssid_ignore_list:
+            return
+
+        # Log the probe
+        message = f'Found a probe!: {ssid}'
+        self.log_file.write(f'{message}\n')
+        logger.info(f"Probe detected from {mac}: {ssid}")
+
+        # Check against historical lists
+        self._check_ssid_history(ssid)
     
     def _check_ssid_history(self, ssid: str) -> None:
         """Check SSID against historical tracking lists"""

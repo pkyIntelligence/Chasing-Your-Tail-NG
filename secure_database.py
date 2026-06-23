@@ -7,6 +7,7 @@ import logging
 from typing import List, Tuple, Optional, Dict, Any
 from datetime import datetime, timedelta
 import time
+from kismet_utils import get_last_probed_ssid
 
 logger = logging.getLogger(__name__)
 
@@ -118,26 +119,13 @@ class SecureKismetDB:
             if not device_data:
                 continue
             
-            # Extract probe request SSID safely
-            try:
-                dot11_device = device_data.get('dot11.device', {})
-                if not isinstance(dot11_device, dict):
-                    continue
-                    
-                probe_record = dot11_device.get('dot11.device.last_probed_ssid_record', {})
-                if not isinstance(probe_record, dict):
-                    continue
-                
-                ssid = probe_record.get('dot11.probedssid.ssid', '')
-                if ssid and isinstance(ssid, str):
-                    probes.append({
-                        'mac': mac,
-                        'ssid': ssid,
-                        'timestamp': device['last_time']
-                    })
-            except (KeyError, TypeError, AttributeError) as e:
-                logger.debug(f"No probe data for device {mac}: {e}")
-                continue
+            ssid = get_last_probed_ssid(device_data)
+            if ssid:
+                probes.append({
+                    'mac': mac,
+                    'ssid': ssid,
+                    'timestamp': device['last_time']
+                })
         
         return probes
     

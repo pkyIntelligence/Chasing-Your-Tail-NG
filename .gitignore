@@ -1,0 +1,25 @@
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# CYT generated output artifacts
+surveillance_analysis.log
+cyt_security.log
+kml_files/*
+logs/*
+analysis_logs/*
+reports/*
+surveillance_reports/*
+
+# Local encrypted credential material
+secure_credentials/.encryption_key
+secure_credentials/encrypted_credentials.json
+
+# Keep tracked directory placeholders
+!kml_files/gitkeep.keep
+!logs/gitkeep.keep
+!analysis_logs/gitkeep.keep
+!reports/gitkeep.keep
+!surveillance_reports/gitkeep.keep
+!secure_credentials/gitkeep.keep
