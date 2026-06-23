@@ -352,20 +352,45 @@ class SurveillanceAnalyzer:
                 for row in rows:
                     mac, timestamp, device_type, device_json, avg_lat, avg_lon = row
                     device_location_id = fallback_location_id
-                    try:
-                        device_lat = float(avg_lat)
-                        device_lon = float(avg_lon)
-                    except (TypeError, ValueError):
-                        device_lat = 0.0
-                        device_lon = 0.0
+                    device_lat = None
+                    device_lon = None
 
-                    if device_lat != 0.0 or device_lon != 0.0:
+                    try:
+                        if avg_lat is not None and avg_lon is not None:
+                            device_lat = float(avg_lat)
+                            device_lon = float(avg_lon)
+                    except (TypeError, ValueError) as exc:
+                        logger.debug(
+                            "Invalid GPS coordinates for device %s in %s: "
+                            "avg_lat=%r avg_lon=%r: %s",
+                            mac,
+                            db_path,
+                            avg_lat,
+                            avg_lon,
+                            exc
+                        )
+
+                    if device_lat is not None and device_lon is not None:
+                        # Kismet uses 0,0 as the no-fix sentinel for device GPS.
+                        # Treat it as report-only rather than a real Gulf of Guinea point.
+                        has_device_gps = device_lat != 0.0 or device_lon != 0.0
+                    else:
+                        has_device_gps = False
+
+                    if has_device_gps:
                         nearest_location_id = self.gps_tracker.find_nearest_location_id(
                             device_lat,
                             device_lon
                         )
                         if nearest_location_id:
                             device_location_id = nearest_location_id
+                    else:
+                        logger.debug(
+                            "Device %s has no usable GPS coordinates in %s; using %s",
+                            mac,
+                            db_path,
+                            fallback_location_id
+                        )
                     
                     ssids_probed = get_last_probed_ssids(device_json)
                     
@@ -378,7 +403,15 @@ class SurveillanceAnalyzer:
                         device_type=device_type
                     )
                     
-                    self.gps_tracker.add_device_at_location(mac, device_location_id)
+                    if device_location_id == fallback_location_id:
+                        logger.debug(
+                            "Device %s appearance recorded with fallback location %s; "
+                            "skipping GPS session correlation",
+                            mac,
+                            fallback_location_id
+                        )
+                    else:
+                        self.gps_tracker.add_device_at_location(mac, device_location_id)
                     
                     count += 1
                 
